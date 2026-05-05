@@ -162,6 +162,3 @@ npm run type-check
 - Built with Vite
 - Uses native Chrome Extension APIs (Manifest V3)
 
----
-
-**par Nasserallah Ber.**
