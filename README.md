@@ -1,167 +1,199 @@
-# 🚀 SC GO — Product Importer
+# Extension Chrome AliExpress — Documentation Technique
 
-**Extension Chrome (Manifest V3)** pour importer des produits AliExpress en 1 clic vers votre boutique.
+## Objectif
 
-## ✨ Fonctionnalités
+Cette documentation décrit l’état réel actuel d’une extension Chrome (Manifest V3) pour:
 
-- ✅ Détection automatique des pages produit AliExpress
-- ✅ Extraction en 3 niveaux (JSON caché → Script → Scraping DOM)
-- ✅ Bouton d'ajout flottant violet sur AliExpress
-- ✅ Import direct vers API backend (Bearer JWT)
-- ✅ Popup de preview avec variantes et prix calculés
-- ✅ Badge avec nombre de produits détectés
-- ✅ Page d'options (URL backend, token, marge par défaut)
-- ✅ Build Vite + TypeScript
-- ✅ Packaging automatique ZIP
-- ✅ Notifications de succès/erreur
+- détecter les fiches produit AliExpress,
+- extraire les données produit et variantes,
+- envoyer ces données à un service d’import sécurisé,
+- piloter l’import depuis un bouton injecté et un popup.
 
-## 📦 Installation
+## Fonctionnalités exactes actuelles
 
-### Prérequis
-- Node.js 18+
-- npm
+- Détection automatique des pages produit AliExpress.
+- Scraping en 3 niveaux de fallback:
+  - niveau 1: données globales JavaScript,
+  - niveau 2: blocs JSON embarqués,
+  - niveau 3: fallback DOM.
+- Extraction variantes avancée:
+  - attributs (ex: couleur, taille),
+  - prix variante,
+  - quantité réelle,
+  - disponibilité réelle,
+  - SKU fournisseur (`sku`, `skuCode`, `sku_code`) quand disponible.
+- Injection d’un bouton flottant sur la page produit.
+- États du bouton:
+  - `idle`,
+  - `loading`,
+  - `success`,
+  - `error`.
+- Toasts de feedback en page.
+- Messaging extension complet:
+  - `PRODUCT_DETECTED`,
+  - `GET_PRODUCT`,
+  - `IMPORT_PRODUCT`,
+  - `CHECK_AUTH`,
+  - `GET_CONFIG`.
+- Import réseau via `background service worker` avec en-tête `Authorization: Bearer <token>`.
+- Notification système après import réussi.
+- Badge extension:
+  - positionné à `1` quand un produit est détecté,
+  - reset lors de navigation.
+- Popup avec 3 états:
+  - non configuré,
+  - produit détecté,
+  - hors page produit.
+- Options avancées:
+  - stockage local de configuration,
+  - collage token,
+  - affichage/masquage token,
+  - slider de marge,
+  - test de connexion.
+- Build multi-entry Vite + TypeScript.
+- Packaging ZIP automatisé.
 
-### Installation
+## Architecture technique
 
-```bash
-cd sc-go
-npm install
-npm run build
-```
+1. Content Script (`src/content/content.ts`)
+   - attend le DOM critique (`waitForProductReady`),
+   - déclenche `scrapeAliExpressProduct()`,
+   - injecte le bouton,
+   - expose `GET_PRODUCT`,
+   - envoie `PRODUCT_DETECTED` au background.
 
-### Chargement dans Chrome
+2. Scraper (`src/content/scraper.ts`)
+   - cascade `window data -> script tags -> DOM`,
+   - normalise produit + variantes,
+   - récupère ID produit depuis le chemin,
+   - construit un payload exploitable côté serveur.
 
-1. Ouvrir Chrome → `chrome://extensions`
-2. Activer le mode développeur
-3. Cliquer sur **Charger l'extension non empaquetée**
-4. Sélectionner le dossier `sc-go/dist`
-5. Épingler l'extension pour accès rapide
+3. Background (`src/background/bg.ts`)
+   - orchestre les messages runtime,
+   - exécute l’import réseau,
+   - exécute le check auth,
+   - fournit la config au popup,
+   - gère notifications et badge.
 
-## 📂 Structure du projet
+4. Popup (`src/popup/popup.ts`)
+   - sélectionne l’état UI,
+   - affiche preview produit,
+   - déclenche import manuel,
+   - affiche feedback résultat.
 
-```
+5. Options (`src/options/options.ts`)
+   - charge/sauvegarde configuration,
+   - gère token et marge,
+   - déclenche un test de connexion.
+
+## Structure projet
+
+```text
 sc-go/
-├── manifest.json            # Manifest V3
-├── package.json             # Dépendances npm
-├── tsconfig.json            # TypeScript
-├── vite.config.ts           # Build Vite
+├── manifest.json
+├── package.json
+├── tsconfig.json
+├── vite.config.ts
 ├── scripts/
-│   └── pack.mjs             # Packaging ZIP
+│   └── pack.mjs
 ├── public/
-│   └── icons/               # Icônes de l'extension
+│   └── icons/
 ├── src/
 │   ├── shared/
-│   │   └── types.ts         # Types TypeScript partagés
+│   │   └── types.ts
 │   ├── background/
-│   │   └── bg.ts            # Service Worker
+│   │   └── bg.ts
 │   ├── content/
-│   │   ├── scraper.ts       # Extraction AliExpress (3 niveaux)
-│   │   ├── content.ts       # Injection bouton + logique import
-│   │   └── content.css      # Styles bouton
+│   │   ├── scraper.ts
+│   │   ├── content.ts
+│   │   └── content.css
 │   ├── popup/
-│   │   ├── popup.html       # UI popup
-│   │   ├── popup.ts         # Logique popup
-│   │   └── popup.css        # Styles popup
+│   │   ├── popup.html
+│   │   ├── popup.ts
+│   │   └── popup.css
 │   └── options/
-│       ├── options.html     # Page configuration
-│       ├── options.ts       # Logique options
-│       └── options.css      # Styles options
-└── dist/                    # Build output
+│       ├── options.html
+│       ├── options.ts
+│       └── options.css
+└── dist/
 ```
 
-## 🔄 Flux de travail
+## Flux de travail détaillé
 
-```mermaid
-flowchart LR
-    A[Page AliExpress] -->|Détection| B[Scraper - 3 niveaux]
-    B -->|Données produit| C[Content Script - Injection]
-    C -->|Bouton Ajouter| D[User clic]
-    D -->|Message IMPORT_PRODUCT| E[Background Service Worker]
-    E -->|POST api + Bearer JWT| F[Backend API]
-    F --> G[Base de données]
-    G -->|Notification| C
-```
+1. L’utilisateur ouvre une fiche produit AliExpress.
+2. Le content script attend les marqueurs DOM (titre + prix).
+3. Le scraper tente l’extraction niveau 1.
+4. Si échec partiel, fallback niveau 2, puis niveau 3.
+5. Si produit valide:
+   - bouton injecté,
+   - message `PRODUCT_DETECTED` envoyé.
+6. L’utilisateur clique “Importer”.
+7. Le content script envoie `IMPORT_PRODUCT` au background.
+8. Le background:
+   - lit la config locale,
+   - calcule `sellingPrice` depuis `priceMin * margin`,
+   - envoie le payload au service d’import,
+   - renvoie succès/erreur.
+9. Le content script met à jour l’état visuel + feedback.
+10. Le popup reflète l’état et permet un import alternatif.
 
-## ⚙️ Configuration
+## Contrat de données (résumé)
 
-Modifier `src/options/options.html` :
+- Produit:
+  - `productId`, `title`, `priceMin`, `priceMax`, `currency`,
+  - `mainImage`, `images`, `description`,
+  - `storeId`, `storeName`, référence boutique,
+  - `rating`, `reviewCount`,
+  - référence page source, `scrapedAt`.
+- Variantes:
+  - `skuId`,
+  - `sku`, `skuCode`, `sku_code`,
+  - `name`, `price`,
+  - `stock`, `quantity`, `available`,
+  - `image`,
+  - `attributes`.
 
-- URL API backend : `https://votreboutique.com/api/admin/aliexpress/import-extension`
-- Token JWT : Coller votre token JWT (celui utilisé pour l'import)
-- Marge par défaut : Pourcentage à appliquer sur le prix AliExpress
+## Scripts disponibles
 
-### Exemple de configuration
-```javascript
-// Dans src/options/options.ts
-const backendUrlInput = document.getElementById('backendUrl') as HTMLInputElement;
-const tokenInput = document.getElementById('token') as HTMLInputElement;
-const marginInput = document.getElementById('margin') as HTMLInputElement;
-
-backendUrlInput.value = 'https://votreboutique.com/api/admin/aliexpress/import-extension';
-tokenInput.value = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'; // Votre token JWT
-marginInput.value = '65'; // Marge de 65%
-```
-
-## 🎨 Design
-
-### Bouton flottant (sur AliExpress)
-
-Violet, fixe en bas à droite, badge avec nombre de produits détectés :
-
-![Bouton flottant SC GO](images/floating-button.png)
-
-### Popup de preview
-
-```
-┌─────────────────────────────┐
-│ Product Importer        [x] │
-├─────────────────────────────┤
-│                             │
-│  ┌───────────────────────┐  │
-│  │  Image produit        │  │
-│  └───────────────────────┘  │
-│                             │
-│  Product Title              │
-│                             │
-│  Price: $10.00 → $16.67   │
-│                             │
-│  Variations:              │
-│  • Size S - Black: +$0.00   │
-│  • Size M - Red:   +$1.00   │
-│                             │
-│  [ Import Product ]         │
-│                             │
-└─────────────────────────────┘
-```
-
-## 🛠️ Build & Packaging
+Depuis le dossier `sc-go`:
 
 ```bash
-# Build
+npm install
+npm run dev
 npm run build
-
-# Package ZIP
-npm run package
+npm run pack
 ```
 
-Le fichier ZIP sera créé dans `sc-go/dist/sc-go-v1.0.0.zip`.
+Notes:
 
-## 🧪 Tests
+- `dev`: build en watch.
+- `build`: bundle extension + copie explicite de `content.css`.
+- `pack`: génère un ZIP versionné depuis les artefacts build.
 
-```bash
-# Vérifier les erreurs de build
-npm run build
+## Installation extension (mode développeur)
 
-# Vérifier TypeScript
-npm run type-check
-```
+1. Exécuter `npm run build`.
+2. Ouvrir la page Extensions de Chrome.
+3. Activer le mode développeur.
+4. Charger l’extension non empaquetée.
+5. Sélectionner le dossier `dist`.
 
-## 📝 Licences & Remerciements
+## Points de robustesse
 
-- MIT License
-- Built with Vite
-- Uses native Chrome Extension APIs (Manifest V3)
+- Fallback multi-source pour résister aux changements de structure AliExpress.
+- Observer DOM pour réagir aux navigations dynamiques.
+- Gestion explicite des erreurs réseau/auth.
+- Feedback utilisateur immédiat (état bouton + toast + popup).
 
----
+## Contraintes et limites actuelles
 
-**par Nasserallah Ber.**
+- La qualité du scraping dépend de la stabilité de la structure source.
+- Certaines fiches peuvent fournir des données partielles.
+- Le fallback DOM ne reconstruit pas toujours les variantes complètes.
+
+## Sécurité et conformité documentaire
+
+- Aucun secret en clair.
+- Aucun token réel.
+- Aucune mention de marque/projet interne.
+- Aucune adresse externe dans ce document.

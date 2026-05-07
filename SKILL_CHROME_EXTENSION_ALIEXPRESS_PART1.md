@@ -1,6 +1,6 @@
 # 🧩 SKILL — Extension Chrome : Importateur Produits AliExpress
 
-> **Version** : 1.0.0 | **Dernière MAJ** : 2026-05-05
+> **Version** : 1.1.0 | **Dernière MAJ** : 2026-05-07
 > **Sous-dossier du projet** : `sc-go/`
 
 ---
@@ -32,9 +32,9 @@ Créer une extension Chrome (Manifest V3) qui :
 1. Détecte automatiquement les pages produit AliExpress
 2. Extrait toutes les données produit (titre, prix, images, variantes/SKUs, vendeur, avis)
 3. Injecte un bouton flottant "Ajouter" directement sur la page AliExpress
-4. Envoie les données au backend de la boutique via API REST sécurisée (Bearer JWT)
+4. Envoie les données au backend de la boutique via API REST sécurisée (Bearer token)
 5. Affiche un popup avec preview du produit détecté + bouton d'import
-6. Propose une page d'options pour configurer l'URL backend, le token JWT, et la marge par défaut
+6. Propose une page d'options pour configurer l'URL backend, le token API admin, et la marge par défaut
 
 ### 1.2 Architecture
 
@@ -105,7 +105,7 @@ sc-go/
 │  POST /api/admin/aliexpress/import-extension           │
 │  GET  /api/admin/aliexpress/status                     │
 │                                                        │
-│  → Validation JWT → Insert DB → Return pendingId       │
+│  → Validation token admin → Insert DB → Return pendingId │
 └────────────────────────────────────────────────────────┘
 ```
 
@@ -295,14 +295,52 @@ function extractSkusFromModule(skuModule): ScrapedSku[] {
     const price = parseFloat(
       skuPrice?.['actSkuCalPrice'] || skuPrice?.['skuCalPrice'] || '0'
     );
-    const stock = parseInt(
-      skuPrice?.['skuQuantity'] || sku['skuStock'] || '999', 10
-    );
+    // Quantité réelle fournisseur (plus de fallback 999)
+    const rawQty =
+      skuPrice?.['skuQuantity']
+      ?? skuPrice?.['availQuantity']
+      ?? sku['skuStock']
+      ?? sku['availQuantity']
+      ?? null;
+    const parsedQty = Number.parseInt(String(rawQty ?? ''), 10);
+    const quantity = Number.isFinite(parsedQty) && parsedQty >= 0 ? parsedQty : undefined;
+
+    // Disponibilité réelle fournisseur
+    const rawAvailability =
+      skuPrice?.['isAvailableForSale']
+      ?? skuPrice?.['available']
+      ?? sku['available']
+      ?? sku['isAvailable']
+      ?? null;
+    const available =
+      typeof rawAvailability === 'boolean'
+        ? rawAvailability
+        : typeof rawAvailability === 'string'
+          ? ['1', 'true', 'yes', 'on'].includes(rawAvailability.trim().toLowerCase())
+          : quantity != null
+            ? quantity > 0
+            : undefined;
+
+    // SKU origine fournisseur (seller SKU)
+    const supplierSkuCandidates = [
+      sku['sellerSku'], sku['seller_sku'], sku['skuCode'], sku['sku_code'],
+      skuPrice?.['sellerSku'], skuPrice?.['seller_sku'], skuPrice?.['skuCode'], skuPrice?.['sku_code'],
+    ];
+    const supplierSku = supplierSkuCandidates
+      .map((candidate) => String(candidate || '').trim())
+      .find((candidate) => candidate.length > 0);
+
+    const stock = quantity ?? 0;
 
     return {
       skuId: String(sku['skuId']),
+      sku: supplierSku || undefined,
+      skuCode: supplierSku || undefined,
+      sku_code: supplierSku || undefined,
       name: Object.values(attributes).join(' · ') || 'Variante',
       price, stock,
+      quantity,
+      available,
       image: sku['skuImage'] || undefined,
       attributes,
     };

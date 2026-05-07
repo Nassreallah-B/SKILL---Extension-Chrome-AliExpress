@@ -1,6 +1,6 @@
 # 🧩 SKILL — Extension Chrome AliExpress — PART 2
 
-> Suite de [PART1](./SKILL_CHROME_EXTENSION_ALIEXPRESS_PART1.md)
+> Suite de [PART1](./SKILL_CHROME_EXTENSION_ALIEXPRESS_PART1.md) — MAJ 2026-05-07 (alignée code SC27)
 
 ---
 
@@ -66,10 +66,13 @@ async function importProduct(product: ScrapedProduct): Promise<ImportResult> {
 
   // Validation config
   if (!config.token) {
-    return { success: false, error: 'Token manquant. Configurez dans les options.' };
+    return { success: false, error: 'Token SC27 manquant. Configurez SC GO dans les options.' };
   }
   if (!config.backendUrl) {
-    return { success: false, error: 'URL backend manquante. Configurez dans les options.' };
+    return {
+      success: false,
+      error: 'URL backend SC27 manquante. Configurez SC GO dans les options.',
+    };
   }
 
   // Calcul prix de vente avec marge
@@ -145,13 +148,15 @@ async function checkAuth(): Promise<AuthStatus> {
 ### 5.4 Fonction `getConfig()`
 
 ```typescript
+const DEFAULT_BACKEND = 'https://YOUR_BACKEND_DOMAIN';
+
 async function getConfig(): Promise<ScGoConfig> {
   const result = await chrome.storage.local.get([
     'scgo_token', 'scgo_backend_url', 'scgo_margin'
   ]);
   return {
     token: String(result['scgo_token'] || ''),
-    backendUrl: String(result['scgo_backend_url'] || ''),
+    backendUrl: String(result['scgo_backend_url'] || DEFAULT_BACKEND),
     defaultMargin: parseFloat(String(result['scgo_margin'] || '2.5')),
   };
 }
@@ -161,8 +166,8 @@ async function getConfig(): Promise<ScGoConfig> {
 
 | Clé | Type | Default | Description |
 |-----|------|---------|-------------|
-| `scgo_token` | string | `''` | JWT admin du backend |
-| `scgo_backend_url` | string | `''` | URL complète du backend (sans trailing slash) |
+| `scgo_token` | string | `''` | Token Bearer admin |
+| `scgo_backend_url` | string | `https://YOUR_BACKEND_DOMAIN` | URL complète du backend (sans trailing slash) |
 | `scgo_margin` | number | `2.5` | Multiplicateur de prix (ex: ×2.5) |
 
 ---
@@ -298,7 +303,7 @@ function showState(name: 'unconfigured' | 'product' | 'idle') {
 | Champ | Type | Description |
 |-------|------|-------------|
 | URL Backend | `<input type="url">` | URL complète du backend déployé |
-| Token Admin JWT | `<input type="password">` | Token JWT récupéré dans l'admin |
+| Token Admin/API | `<input type="password">` | Token Bearer admin |
 | Marge par défaut | `<input type="range" min="1.2" max="5" step="0.1">` | Multiplicateur prix (×1.2 à ×5.0) |
 
 ### 7.2 Fonctionnalités
@@ -306,7 +311,7 @@ function showState(name: 'unconfigured' | 'product' | 'idle') {
 - **Bouton Coller** 📋 : `navigator.clipboard.readText()` pour coller le token
 - **Toggle visibilité** 👁 : basculer le champ token entre `password` et `text`
 - **Sauvegarde** 💾 : écriture dans `chrome.storage.local`
-- **Test connexion** 🔗 : `GET /api/admin/aliexpress/status` avec le token
+- **Test connexion** 🔗 : `GET /api/admin/aliexpress/status` avec le token Bearer
 
 ### 7.3 Logique `options.ts`
 
@@ -367,9 +372,14 @@ export interface ScrapedProduct {
 
 export interface ScrapedSku {
   skuId: string;
+  sku?: string;
+  skuCode?: string;
+  sku_code?: string;
   name: string;        // Ex: "Rouge · XL"
   price: number;
   stock: number;
+  quantity?: number;
+  available?: boolean;
   image?: string;
   attributes: Record<string, string>; // Ex: { "Couleur": "Rouge", "Taille": "XL" }
 }
@@ -559,8 +569,8 @@ execSync(`powershell Compress-Archive -Path "${PKG}\\*" -DestinationPath "${join
 
 | Méthode | Route | Auth | Description |
 |---------|-------|------|-------------|
-| `POST` | `/api/admin/aliexpress/import-extension` | Bearer JWT | Reçoit un produit scrapé et l'ajoute en pending |
-| `GET` | `/api/admin/aliexpress/status` | Bearer JWT | Vérifie que le token est valide |
+| `POST` | `/api/admin/aliexpress/import-extension` | Bearer token admin | Reçoit un produit scrapé et l'ajoute en pending |
+| `GET` | `/api/admin/aliexpress/status` | Bearer token admin | Vérifie que le token est valide |
 
 ### 11.2 Body du POST `import-extension`
 
@@ -569,16 +579,21 @@ execSync(`powershell Compress-Archive -Path "${PKG}\\*" -DestinationPath "${join
   "productId": "1234567890",
   "title": "Wireless Bluetooth Headphones",
   "price": { "min": 12.50, "max": 18.90, "currency": "USD" },
-  "mainImage": "https://ae01.alicdn.com/...",
-  "images": ["url1", "url2", "url3"],
+  "mainImage": "https://cdn.example.com/product-main.jpg",
+  "images": ["https://cdn.example.com/1.jpg", "https://cdn.example.com/2.jpg"],
   "description": "...",
   "skus": [
     {
       "skuId": "12345",
+      "sku": "SUPPLIER-SKU-001",
+      "skuCode": "SUPPLIER-SKU-001",
+      "sku_code": "SUPPLIER-SKU-001",
       "name": "Noir · M",
       "price": 14.20,
       "stock": 500,
-      "image": "https://...",
+      "quantity": 500,
+      "available": true,
+      "image": "https://cdn.example.com/sku.jpg",
       "attributes": { "Couleur": "Noir", "Taille": "M" }
     }
   ],
@@ -596,84 +611,42 @@ execSync(`powershell Compress-Archive -Path "${PKG}\\*" -DestinationPath "${join
 
 ```json
 // Succès
-{ "pendingId": "uuid-xxx", "status": "pending" }
+{ "success": true, "pendingId": "uuid-xxx" }
 
 // Erreur
-{ "error": "Token invalide" }
+{ "error": "Token admin invalide" }
 ```
 
-### 11.4 Implémentation backend recommandée
+### 11.4 Contrat backend réel (SC27)
 
-```typescript
-// POST /api/admin/aliexpress/import-extension
-export default async function handler(req, res) {
-  // 1. Vérifier JWT
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  const user = await verifyAdminToken(token);
-  if (!user) return res.status(401).json({ error: 'Non autorisé' });
+- Auth:
+  - Bearer token admin obligatoire
+  - Refus en `401` si token invalide
+- Validation:
+  - `productId`, `title`, `mainImage`, `url` obligatoires
+  - `skus[]` accepte `skuId`, `sku/skuCode/sku_code`, `stock`, `quantity`, `available`
+- Persistance:
+  - Upsert sur `aliexpress_pending_products` via `ON CONFLICT (aliexpress_product_id)`
+  - Données brutes du scrape stockées dans `product_detail` (JSONB)
+  - Retour JSON: `{ success: true, pendingId }`
 
-  // 2. Valider le body
-  const { productId, title, price, mainImage, images, skus, sellingPrice } = req.body;
-  if (!productId || !title) return res.status(400).json({ error: 'Données manquantes' });
+### 11.5 Table SQL à utiliser
 
-  // 3. Vérifier doublon
-  const existing = await db.query(
-    'SELECT id FROM aliexpress_pending WHERE ali_product_id = $1 AND user_id = $2',
-    [productId, user.id]
-  );
-  if (existing.rows.length > 0) {
-    return res.status(409).json({ error: 'Produit déjà importé', pendingId: existing.rows[0].id });
-  }
+La table cible est `aliexpress_pending_products` (pas `aliexpress_pending`).
 
-  // 4. Insérer en pending
-  const result = await db.query(
-    `INSERT INTO aliexpress_pending
-     (user_id, ali_product_id, title, price_min, price_max, currency,
-      main_image, images, description, skus, store_id, store_name,
-      rating, review_count, ali_url, selling_price, source, status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'pending')
-     RETURNING id`,
-    [user.id, productId, title, price.min, price.max, price.currency,
-     mainImage, JSON.stringify(images), req.body.description,
-     JSON.stringify(skus), req.body.storeId, req.body.storeName,
-     req.body.rating, req.body.reviewCount, req.body.url, sellingPrice, 'extension']
-  );
-
-  return res.status(201).json({ pendingId: result.rows[0].id, status: 'pending' });
-}
-```
-
-### 11.5 Table SQL `aliexpress_pending`
-
-```sql
-CREATE TABLE IF NOT EXISTS aliexpress_pending (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES auth.users(id),
-  ali_product_id TEXT NOT NULL,
-  title TEXT NOT NULL,
-  price_min NUMERIC(10,2),
-  price_max NUMERIC(10,2),
-  currency TEXT DEFAULT 'USD',
-  main_image TEXT,
-  images JSONB DEFAULT '[]',
-  description TEXT,
-  skus JSONB DEFAULT '[]',
-  store_id TEXT,
-  store_name TEXT,
-  rating NUMERIC(3,2),
-  review_count INTEGER DEFAULT 0,
-  ali_url TEXT,
-  selling_price NUMERIC(10,2),
-  source TEXT DEFAULT 'extension',
-  status TEXT DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','published')),
-  created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now(),
-  UNIQUE(user_id, ali_product_id)
-);
-
-CREATE INDEX idx_ali_pending_user ON aliexpress_pending(user_id);
-CREATE INDEX idx_ali_pending_status ON aliexpress_pending(status);
-```
+Champs clés attendus:
+- `aliexpress_product_id`
+- `original_title`
+- `original_price_eur`
+- `original_images`
+- `custom_title`
+- `selling_price_eur`
+- `images`
+- `product_detail`
+- `store_name`
+- `store_id`
+- `status`
+- `source`
 
 ---
 
@@ -685,7 +658,7 @@ CREATE INDEX idx_ali_pending_status ON aliexpress_pending(status);
 - [ ] Générer les icônes PNG (16, 32, 48, 128px) — format PNG obligatoire
 - [ ] Configurer l'endpoint backend `POST /api/admin/aliexpress/import-extension`
 - [ ] Configurer l'endpoint backend `GET /api/admin/aliexpress/status`
-- [ ] Créer la table `aliexpress_pending` en base de données
+- [ ] Vérifier la table `aliexpress_pending_products` en base de données
 - [ ] Tester le scraper sur 10+ produits AliExpress différents
 - [ ] Tester les 3 niveaux de fallback du scraper
 - [ ] Vérifier que `npm run build` produit un `dist/` fonctionnel
@@ -706,7 +679,7 @@ CREATE INDEX idx_ali_pending_status ON aliexpress_pending(status);
 
 | Aspect | Mesure |
 |--------|--------|
-| Token JWT | Stocké dans `chrome.storage.local` (jamais exposé au DOM) |
+| Token admin | Stocké dans `chrome.storage.local` (jamais exposé au DOM) |
 | HTTPS | Toutes les requêtes via HTTPS uniquement |
 | CORS | Le backend doit autoriser l'origin de l'extension Chrome |
 | Validation | Le backend doit TOUJOURS revalider les données reçues |
